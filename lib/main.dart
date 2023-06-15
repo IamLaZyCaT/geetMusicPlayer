@@ -7,7 +7,7 @@ void main() {
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  const MyApp({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -25,10 +25,10 @@ class MyApp extends StatelessWidget {
 }
 
 class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key});
+  const MyHomePage({Key? key}) : super(key: key);
 
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  _MyHomePageState createState() => _MyHomePageState();
 }
 
 class _MyHomePageState extends State<MyHomePage> {
@@ -37,7 +37,13 @@ class _MyHomePageState extends State<MyHomePage> {
 //define on audio pugin
   final OnAudioQuery _audioQuery = OnAudioQuery();
 
-  //request permission from initStateMethod
+//define every song
+  List<SongModel> songs = [];
+
+  //defining seaching song
+  List<SongModel> filteredSongs = [];
+
+//request permission from initStateMethod
   @override
   void initState() {
     super.initState();
@@ -50,13 +56,16 @@ class _MyHomePageState extends State<MyHomePage> {
       onTap: () {
         FocusScope.of(context).unfocus();
       },
+      //search bar in appbar
       child: Scaffold(
-        //search bar in appbar
         appBar: AppBar(
           toolbarHeight: 120,
           title: TextFormField(
             cursorColor: Colors.black,
             controller: _searchController,
+            onChanged: (value) {
+              filterSongs(value);
+            },
             decoration: InputDecoration(
               hintText: 'Search...',
               // Add a clear button to the search bar
@@ -67,7 +76,6 @@ class _MyHomePageState extends State<MyHomePage> {
                 ),
                 onPressed: () => _searchController.clear(),
               ),
-
               // Add a search icon or button to the search bar
               prefixIcon: IconButton(
                 icon: const Icon(
@@ -76,9 +84,10 @@ class _MyHomePageState extends State<MyHomePage> {
                 ),
                 onPressed: () {
                   // Perform the search here
+                  String searchQuery = _searchController.text;
+                  filterSongs(searchQuery);
                 },
               ),
-
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(30.0),
               ),
@@ -95,6 +104,7 @@ class _MyHomePageState extends State<MyHomePage> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
+                  //making two floating action button
                   SizedBox(
                     height: 100,
                     width: 150,
@@ -153,43 +163,65 @@ class _MyHomePageState extends State<MyHomePage> {
                     child: SizedBox(
                       height: 500,
                       child: FutureBuilder<List<SongModel>>(
+                        // Querying the songs
+                        future: _audioQuery.querySongs(
+                          orderType: OrderType.ASC_OR_SMALLER,
+                          uriType: UriType.EXTERNAL,
+                          ignoreCase: true,
+                        ),
+                        builder: (context, snapshot) {
+                          // Loading indicator while fetching songs
+                          if (snapshot.connectionState ==
+                              ConnectionState.waiting) {
+                            return const Center(
+                              child: CircularProgressIndicator(),
+                            );
+                          }
 
-                          //default values
-                          future: _audioQuery.querySongs(
-                            orderType: OrderType.ASC_OR_SMALLER,
-                            uriType: UriType.EXTERNAL,
-                            ignoreCase: true,
-                          ),
-                          builder: (context, item) {
-                            //loading content indicator
-                            if (item.data == null) {
-                              return const Center(
-                                child: CircularProgressIndicator(),
-                              );
-                            }
-                            //no songs found
-                            if (item.data!.isEmpty) {
+                          if (snapshot.hasData) {
+                            songs = snapshot.data!;
+                            // No songs found
+                            if (songs.isEmpty) {
                               return const Center(
                                 child: Text("No Songs Found"),
                               );
                             }
 
-                            //showing the songs
+                            // Filtering the songs based on the search query
+                            List<SongModel> displayedSongs =
+                                filteredSongs.isNotEmpty
+                                    ? filteredSongs
+                                    : songs;
+
+                            // Displaying the filtered songs
                             return ListView.builder(
-                                itemCount: item.data!.length,
-                                itemBuilder: (context, index) {
-                                  return ListTile(
-                                    title: Text(item.data![index].title),
-                                    subtitle:
-                                        Text(item.data![index].displayName),
-                                    trailing: const Icon(Icons.more_vert),
-                                    leading: QueryArtworkWidget(
-                                      id: item.data![index].id,
-                                      type: ArtworkType.AUDIO,
-                                    ),
-                                  );
-                                });
-                          }),
+                              itemCount: displayedSongs.length,
+                              itemBuilder: (context, index) {
+                                return ListTile(
+                                  title: Text(displayedSongs[index].title),
+                                  subtitle:
+                                      Text(displayedSongs[index].displayName),
+                                  trailing: const Icon(Icons.more_vert),
+                                  leading: QueryArtworkWidget(
+                                    id: displayedSongs[index].id,
+                                    type: ArtworkType.AUDIO,
+                                  ),
+                                );
+                              },
+                            );
+                          } else if (snapshot.hasError) {
+                            // Error occurred while fetching songs
+                            return Center(
+                              child: Text("Error: ${snapshot.error}"),
+                            );
+                          } else {
+                            // No songs found
+                            return const Center(
+                              child: Text("No Songs Found"),
+                            );
+                          }
+                        },
+                      ),
                     ),
                   ),
                 ],
@@ -207,8 +239,22 @@ class _MyHomePageState extends State<MyHomePage> {
       if (!permissionStatus) {
         await _audioQuery.permissionsRequest();
       }
-//ensure build method is called
       setState(() {});
     }
+  }
+
+  void filterSongs(String query) {
+    setState(() {
+      // If search query is empty, display all songs
+      if (query.isEmpty) {
+        filteredSongs = [];
+      } else {
+        // Filter the songs based on the search query
+        filteredSongs = songs.where((song) {
+          return song.title.toLowerCase().contains(query.toLowerCase()) ||
+              song.displayName.toLowerCase().contains(query.toLowerCase());
+        }).toList();
+      }
+    });
   }
 }
