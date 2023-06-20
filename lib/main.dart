@@ -2,6 +2,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 
+import 'FavoritesPage.dart';
+import 'PlaylistPage.dart';
+
 void main() {
   runApp(const MyApp());
 }
@@ -28,22 +31,17 @@ class MyHomePage extends StatefulWidget {
   const MyHomePage({Key? key}) : super(key: key);
 
   @override
-  _MyHomePageState createState() => _MyHomePageState();
+  State<MyHomePage> createState() => _MyHomePageState();
 }
 
 class _MyHomePageState extends State<MyHomePage> {
   final TextEditingController _searchController = TextEditingController();
-
-//define on audio pugin
   final OnAudioQuery _audioQuery = OnAudioQuery();
-
-//define every song
   List<SongModel> songs = [];
-
-  //defining seaching song
   List<SongModel> filteredSongs = [];
+  Set<int> favoriteSongs = {};
+  List<SongModel> playlistSongs = [];
 
-//request permission from initStateMethod
   @override
   void initState() {
     super.initState();
@@ -56,7 +54,6 @@ class _MyHomePageState extends State<MyHomePage> {
       onTap: () {
         FocusScope.of(context).unfocus();
       },
-      //search bar in appbar
       child: Scaffold(
         appBar: AppBar(
           toolbarHeight: 120,
@@ -68,7 +65,6 @@ class _MyHomePageState extends State<MyHomePage> {
             },
             decoration: InputDecoration(
               hintText: 'Search...',
-              // Add a clear button to the search bar
               suffixIcon: IconButton(
                 icon: const Icon(
                   Icons.clear,
@@ -76,7 +72,6 @@ class _MyHomePageState extends State<MyHomePage> {
                 ),
                 onPressed: () => _searchController.clear(),
               ),
-              // Add a search icon or button to the search bar
               prefixIcon: IconButton(
                 icon: const Icon(
                   Icons.search,
@@ -84,8 +79,6 @@ class _MyHomePageState extends State<MyHomePage> {
                 ),
                 onPressed: () {
                   // Perform the search here
-                  String searchQuery = _searchController.text;
-                  filterSongs(searchQuery);
                 },
               ),
               border: OutlineInputBorder(
@@ -104,7 +97,6 @@ class _MyHomePageState extends State<MyHomePage> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  //making two floating action button
                   SizedBox(
                     height: 100,
                     width: 150,
@@ -120,10 +112,10 @@ class _MyHomePageState extends State<MyHomePage> {
                           Text(
                             "Favorite",
                             style: TextStyle(color: Colors.white),
-                          )
+                          ),
                         ],
                       ),
-                      onPressed: () {},
+                      onPressed: navigateToFavorites,
                     ),
                   ),
                   SizedBox(
@@ -141,10 +133,10 @@ class _MyHomePageState extends State<MyHomePage> {
                           Text(
                             "Playlist",
                             style: TextStyle(color: Colors.white),
-                          )
+                          ),
                         ],
                       ),
-                      onPressed: () {},
+                      onPressed: navigateToPlaylist,
                     ),
                   ),
                 ],
@@ -162,66 +154,46 @@ class _MyHomePageState extends State<MyHomePage> {
                   SingleChildScrollView(
                     child: SizedBox(
                       height: 500,
-                      child: FutureBuilder<List<SongModel>>(
-                        // Querying the songs
-                        future: _audioQuery.querySongs(
-                          orderType: OrderType.ASC_OR_SMALLER,
-                          uriType: UriType.EXTERNAL,
-                          ignoreCase: true,
-                        ),
-                        builder: (context, snapshot) {
-                          // Loading indicator while fetching songs
-                          if (snapshot.connectionState ==
-                              ConnectionState.waiting) {
-                            return const Center(
-                              child: CircularProgressIndicator(),
-                            );
-                          }
-
-                          if (snapshot.hasData) {
-                            songs = snapshot.data!;
-                            // No songs found
-                            if (songs.isEmpty) {
-                              return const Center(
-                                child: Text("No Songs Found"),
-                              );
-                            }
-
-                            // Filtering the songs based on the search query
-                            List<SongModel> displayedSongs =
-                                filteredSongs.isNotEmpty
-                                    ? filteredSongs
-                                    : songs;
-
-                            // Displaying the filtered songs
-                            return ListView.builder(
-                              itemCount: displayedSongs.length,
+                      child: filteredSongs.isEmpty
+                          ? const Center(
+                              child: Text("No Songs Found"),
+                            )
+                          : ListView.builder(
+                              itemCount: filteredSongs.length,
                               itemBuilder: (context, index) {
+                                SongModel song = filteredSongs[index];
+                                bool isFavorite =
+                                    favoriteSongs.contains(song.id);
                                 return ListTile(
-                                  title: Text(displayedSongs[index].title),
-                                  subtitle:
-                                      Text(displayedSongs[index].displayName),
-                                  trailing: const Icon(Icons.more_vert),
+                                  title: Text(song.title),
+                                  subtitle: Text(song.displayName),
+                                  trailing: PopupMenuButton(
+                                    itemBuilder: (BuildContext context) {
+                                      return [
+                                        PopupMenuItem(
+                                          child: Text(isFavorite
+                                              ? 'Add to Favorites'
+                                              : 'Add to Favorites'),
+                                          onTap: () {
+                                            toggleFavorite(song);
+                                          },
+                                        ),
+                                        PopupMenuItem(
+                                          child: Text('Add to Playlist'),
+                                          onTap: () {
+                                            addToPlaylist(song);
+                                          },
+                                        ),
+                                      ];
+                                    },
+                                  ),
                                   leading: QueryArtworkWidget(
-                                    id: displayedSongs[index].id,
+                                    id: songs[index].id,
                                     type: ArtworkType.AUDIO,
                                   ),
                                 );
                               },
-                            );
-                          } else if (snapshot.hasError) {
-                            // Error occurred while fetching songs
-                            return Center(
-                              child: Text("Error: ${snapshot.error}"),
-                            );
-                          } else {
-                            // No songs found
-                            return const Center(
-                              child: Text("No Songs Found"),
-                            );
-                          }
-                        },
-                      ),
+                            ),
                     ),
                   ),
                 ],
@@ -239,22 +211,66 @@ class _MyHomePageState extends State<MyHomePage> {
       if (!permissionStatus) {
         await _audioQuery.permissionsRequest();
       }
-      setState(() {});
+      loadSongs();
     }
   }
 
-  void filterSongs(String query) {
+  void loadSongs() async {
+    List<SongModel> allSongs = await _audioQuery.querySongs(
+      orderType: OrderType.ASC_OR_SMALLER,
+      uriType: UriType.EXTERNAL,
+      ignoreCase: true,
+    );
     setState(() {
-      // If search query is empty, display all songs
-      if (query.isEmpty) {
-        filteredSongs = [];
+      songs = allSongs;
+      filteredSongs = allSongs;
+    });
+  }
+
+  void filterSongs(String keyword) {
+    setState(() {
+      filteredSongs = songs.where((song) {
+        return song.title.toLowerCase().contains(keyword.toLowerCase()) ||
+            song.displayName.toLowerCase().contains(keyword.toLowerCase());
+      }).toList();
+    });
+  }
+
+  void toggleFavorite(SongModel song) {
+    setState(() {
+      if (favoriteSongs.contains(song.id)) {
+        favoriteSongs.remove(song.id);
       } else {
-        // Filter the songs based on the search query
-        filteredSongs = songs.where((song) {
-          return song.title.toLowerCase().contains(query.toLowerCase()) ||
-              song.displayName.toLowerCase().contains(query.toLowerCase());
-        }).toList();
+        favoriteSongs.add(song.id);
       }
     });
+  }
+
+  void addToPlaylist(SongModel song) {
+    setState(() {
+      playlistSongs.add(song);
+    });
+  }
+
+  void navigateToFavorites() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => FavoritesPage(
+          favoriteSongs: favoriteSongs,
+        ),
+      ),
+    );
+  }
+
+  void navigateToPlaylist() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PlaylistPage(
+          playlistSongs: playlistSongs,
+        ),
+      ),
+    );
   }
 }
